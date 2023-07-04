@@ -13,10 +13,11 @@ using Dalamud.IoC;
 using Dalamud.Logging;
 using Dalamud.Plugin;
 using Dalamud.Utility.Signatures;
+using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using ImGuiNET;
-using Lumina.Excel.GeneratedSheets;
+using Excel = Lumina.Excel.GeneratedSheets;
 using Num = System.Numerics;
 
 namespace PennyPincher
@@ -24,6 +25,7 @@ namespace PennyPincher
     public class PennyPincher : IDalamudPlugin
     {
         [PluginService] public static DalamudPluginInterface PluginInterface { get; private set; } = null!;
+        [PluginService] public static Condition Condition { get; private set; } = null!;
         [PluginService] public static CommandManager CommandManager { get; private set; } = null!;
         [PluginService] public static ChatGui Chat { get; private set; } = null!;
         [PluginService] public static DataManager Data { get; private set; } = null!;
@@ -44,12 +46,11 @@ namespace PennyPincher
 
         private bool _config;
         private Configuration configuration;
-        private Lumina.Excel.ExcelSheet<Item> items;
+        private Lumina.Excel.ExcelSheet<Excel.Item> items;
         private bool newRequest;
         private bool useHq;
         private bool itemHq;
-        [Signature("E8 ?? ?? ?? ?? 48 85 C0 74 14 83 7B 44 00")]
-        private GetFilePointer getFilePtr;
+
         [Signature("48 89 5C 24 ?? 55 56 57 48 83 EC 50 4C 89 64 24", DetourName = nameof(AddonRetainerSell_OnSetup))]
         private Hook<AddonOnSetup> retainerSellSetup;
         private List<MarketBoardCurrentOfferings> _cache = new();
@@ -82,7 +83,7 @@ namespace PennyPincher
             }
             LoadConfig();
             
-            items = Data.GetExcelSheet<Item>();
+            items = Data.GetExcelSheet<Excel.Item>();
             newRequest = false;
 
             PluginInterface.UiBuilder.Draw += DrawWindow;
@@ -102,7 +103,6 @@ namespace PennyPincher
             }
             catch (Exception e)
             {
-                getFilePtr = null;
                 PluginLog.LogError(e.ToString());
             }
         }
@@ -222,9 +222,12 @@ namespace PennyPincher
             PluginInterface.SavePluginConfig(configuration);
         }
         
+        /// <summary>
+        /// Checks if summoning retainer
+        /// </summary>
         private bool Retainer()
         {
-            return (getFilePtr != null) && Marshal.ReadInt64(getFilePtr(7), 0xB0) != 0;
+            return Condition[ConditionFlag.OccupiedSummoningBell];
         }
 
         private void OnNetworkEvent(IntPtr dataPtr, ushort opCode, uint sourceActorId, uint targetActorId, NetworkMessageDirection direction)
