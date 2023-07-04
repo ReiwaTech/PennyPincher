@@ -301,9 +301,10 @@ namespace PennyPincher
         private unsafe bool IsOwnRetainer(ulong retainerId)
         {
             var retainerManager = RetainerManager.Instance();
-            for (int i = 0; i < retainerManager->GetRetainerCount(); ++i)
+            for (uint i = 0; i < 10; ++i)
             {
-                if (retainerId == retainerManager->Retainer[i]->RetainerID)
+                var retainer = retainerManager->GetRetainerBySortedIndex(i);
+                if (retainer != null && retainerId == retainer->RetainerID)
                 {
                     return true;
                 }
