@@ -49,10 +49,7 @@ namespace PennyPincher
         private Lumina.Excel.ExcelSheet<Excel.Item> items;
         private bool newRequest;
         private bool useHq;
-        private bool itemHq;
 
-        [Signature("48 89 5C 24 ?? 55 56 57 48 83 EC 50 4C 89 64 24", DetourName = nameof(AddonRetainerSell_OnSetup))]
-        private Hook<AddonOnSetup> retainerSellSetup;
         private List<MarketBoardCurrentOfferings> _cache = new();
 
         public PennyPincher()
@@ -84,7 +81,6 @@ namespace PennyPincher
             try
             {
                 SignatureHelper.Initialise(this);
-                retainerSellSetup.Enable();
             }
             catch (Exception e)
             {
@@ -99,7 +95,6 @@ namespace PennyPincher
 
         public void Dispose()
         {
-            retainerSellSetup?.Dispose();
             GameNetwork.NetworkMessage -= OnNetworkEvent;
             PluginInterface.UiBuilder.Draw -= DrawWindow;
             PluginInterface.UiBuilder.OpenConfigUi -= OpenConfigUi;
@@ -227,7 +222,7 @@ namespace PennyPincher
                 _cache.Clear();
 
                 var shiftHeld = KeyState[(byte)Dalamud.DrunkenToad.ModifierKey.Enum.VkShift];
-                useHq = shiftHeld ^ (configuration.hq && itemHq);
+                useHq = shiftHeld ^ configuration.hq;
             }
             if (opCode != Data.ServerOpCodes["MarketBoardOfferings"] || !newRequest) return;
             if (!configuration.alwaysOn && !Retainer()) return;
@@ -237,22 +232,11 @@ namespace PennyPincher
             _cache.Add(listing);
             if (!IsDataValid(listing)) return;
 
-            var i = 0;
-            if (useHq && items.Single(j => j.RowId == listing.ItemListings[0].CatalogId).CanBeHq)
-            {
-                while (i < listing.ItemListings.Count && (!listing.ItemListings[i].IsHq || (!configuration.undercutSelf && IsOwnRetainer(listing.ItemListings[i].RetainerId)))) i++;
-            }
-            else
-            {
-                while (i < listing.ItemListings.Count && (!configuration.undercutSelf && IsOwnRetainer(listing.ItemListings[i].RetainerId))) i++;
-            }
+            var wantHQ = useHq && items.GetRow(listing.ItemListings[0].CatalogId).CanBeHq;
+            var reference = listing.ItemListings.FirstOrDefault(item => (!wantHQ || item.IsHq) && (configuration.undercutSelf || !IsOwnRetainer(item.RetainerId)));
+            if (reference == null) return;
 
-            if (i == listing.ItemListings.Count) return;
-
-            var price = listing.ItemListings[i].PricePerUnit - (listing.ItemListings[i].PricePerUnit % configuration.mod) - configuration.delta;
-            price -= (price % configuration.multiple);
-            price = Math.Max(price, configuration.min);
-
+            var price = CalculatePrice(reference.PricePerUnit);
             ImGui.SetClipboardText(price.ToString());
             if (configuration.verbose)
             {
@@ -262,14 +246,13 @@ namespace PennyPincher
             newRequest = false;
         }
 
-        private unsafe IntPtr AddonRetainerSell_OnSetup(IntPtr addon, uint a2, IntPtr dataPtr)
+        private long CalculatePrice(long currentPrice)
         {
-            var result = retainerSellSetup.Original(addon, a2, dataPtr);
+            var price = currentPrice - (currentPrice % configuration.mod) - configuration.delta;
+            price -= (price % configuration.multiple);
+            price = Math.Max(price, configuration.min);
 
-            string nodeText = ((AddonRetainerSell*)addon)->ItemName->NodeText.ToString();
-            itemHq = nodeText.Contains('\uE03C');
-
-            return result;
+            return price;
         }
 
         private bool IsDataValid(MarketBoardCurrentOfferings listing)
